@@ -1,56 +1,101 @@
-import requests, csv, os, sys
+import requests
+import csv
+import os
+import sys
+from collections.abc import Mapping
+from typing import Any
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'API'))
 from config import API_TOKEN
 
+URL: str = "https://api.clashroyale.com/v1/cards"
+HEADERS: Mapping[str, str] = {"Authorization": f"Bearer {API_TOKEN}"}
+OUTPUT_DIR: str = "./Data"
+IMAGES_DIR: str = os.path.join(OUTPUT_DIR, "images")
+CARD_DATA_FILE: str = os.path.join(OUTPUT_DIR, "cards.csv")
+TEMP_FILE: str = os.path.join(OUTPUT_DIR, "cards_sorted.csv")
+CARD_CSV_HEADER: list[str] = ["Name", "Elixir", "Icon"]
+ICON_KEYS: list[str] = ["medium", "evolutionMedium"]
 
-url = "https://api.clashroyale.com/v1/cards"
+def fetch_data(url: str, headers: Mapping[str, str]) -> dict[str, Any]:
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
 
-headers = {"Authorization": f"Bearer {API_TOKEN}"}
-response = requests.get(url, headers=headers)
-data = response.json()
+def sanitize_name(name: str) -> str:
+    return name.replace(" ", "_").replace(".", "").replace("/", "_")
 
-os.makedirs("./Data/images", exist_ok=True)
+def download_image(url: str, filepath: str) -> None:
+    if not os.path.isfile(filepath):
+        img_response = requests.get(url)
+        img_response.raise_for_status()
+        with open(filepath, "wb") as f:
+            f.write(img_response.content)
 
-with open("./Data/cards.csv", "w", newline="", encoding="utf-8") as csvfile:
-    writer = csv.writer(csvfile)
-    writer.writerow(["Name", "Elixir", "Icon"])
+def process_card_data(data: dict[str, Any]) -> list[list[Any]]:
+    rows = []
+    for card in data.get("items", []):
+        name: str = card.get("name")
+        if not name:
+            continue
+            
+        elixir: Any = card.get("elixirCost", "N/A")
+        icon_urls: dict[str, str] = card.get("iconUrls", {})
+        safe_name: str = sanitize_name(name)
 
-    for card in data["items"]:
-        name = card["name"]
-        elixir = card.get("elixirCost", "N/A")
-        icon_urls = card.get("iconUrls", {})
-
-        for key in ["medium", "evolutionMedium"]:
-            if key in icon_urls:
-                safe_name = name.replace(" ", "_").replace(".", "").replace("/", "_")
+        for key in ICON_KEYS:
+            icon_url = icon_urls.get(key)
+            if icon_url:
                 if key == "evolutionMedium":
                     filename = f"{safe_name}_evolution.png"
-                    display_name = f"{safe_name}_Evolution"
+                    display_name = f"{name} Evolution"
                 else:
                     filename = f"{safe_name}.png"
-                    display_name = safe_name
+                    display_name = name
 
-                filepath = os.path.join("./Data/images", filename)
+                filepath: str = os.path.join(IMAGES_DIR, filename)
+                
+                try:
+                    download_image(icon_url, filepath)
+                    rows.append([display_name, elixir, filepath])
+                except requests.HTTPError as e:
+                    print(f"Warning: Could not download image for {display_name} from {icon_url}. Error: {e}")
+                except Exception as e:
+                    print(f"Warning: An unexpected error occurred for {display_name}. Error: {e}")
+                    
+    return rows
 
-                if not os.path.isfile(filepath):
-                    img_response = requests.get(icon_urls[key])
-                    if img_response.status_code == 200:
-                        with open(filepath, "wb") as f:
-                            f.write(img_response.content)
+def write_csv(filepath: str, header: list[str], rows: list[list[Any]]) -> None:
+    with open(filepath, "w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(header)
+        writer.writerows(rows)
 
-                writer.writerow([display_name, elixir, filepath])
+def read_csv_data(filepath: str) -> tuple[list[str], list[list[Any]]]:
+    with open(filepath, "r", encoding="utf-8", newline="") as infile:
+        reader = csv.reader(infile)
+        header = next(reader)
+        rows = list(reader)
+    return header, rows
 
-temp_file = "./Data/cards_sorted.csv"
-sorted_file = "./Data/cards.csv"
-with open("./Data/cards.csv", "r", encoding="utf-8", newline="") as infile:
-    reader = csv.reader(infile)
-    header = next(reader)
-    rows = list(reader)
-rows.sort(key=lambda x: x[0].lower())
-with open(temp_file, "w", encoding="utf-8", newline="") as outfile:
-    writer = csv.writer(outfile)
-    writer.writerow(header)
-    writer.writerows(rows)  
-os.remove(sorted_file) 
-os.rename(temp_file, sorted_file)      
-print("Images retrieved, sorted and saved successfully")
+def sort_and_save_csv(input_file: str, temp_file: str) -> None:
+    header, rows = read_csv_data(input_file)
+    rows.sort(key=lambda x: x[0].lower())
+    write_csv(temp_file, header, rows)
+    os.replace(temp_file, input_file)
+
+try:
+    data = fetch_data(URL, HEADERS)
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+    
+    card_rows = process_card_data(data)
+    write_csv(CARD_DATA_FILE, CARD_CSV_HEADER, card_rows)
+
+    sort_and_save_csv(CARD_DATA_FILE, TEMP_FILE)
+    
+    print("Images retrieved, sorted, and saved successfully")
+
+except requests.HTTPError as e:
+    print(f"Error fetching data or image: {e}")
+except Exception as e:
+    print(f"An unexpected error occurred: {e}")
