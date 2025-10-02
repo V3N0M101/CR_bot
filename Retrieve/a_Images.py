@@ -1,10 +1,12 @@
-import requests
-import csv
-import os
-import sys
+# Retrieves all the images from the Clash Royale API and saves them locally
+'''
+Author: Venom
+Date: 2025-10-02
+'''
+
+import requests, os, sys, csv
 from collections.abc import Mapping
 from typing import Any
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'API'))
 from config import API_TOKEN
 
@@ -14,7 +16,17 @@ OUTPUT_DIR: str = "./Data"
 IMAGES_DIR: str = os.path.join(OUTPUT_DIR, "images")
 CARD_DATA_FILE: str = os.path.join(OUTPUT_DIR, "cards.csv")
 TEMP_FILE: str = os.path.join(OUTPUT_DIR, "cards_sorted.csv")
-CARD_CSV_HEADER: list[str] = ["Name", "Elixir", "Icon"]
+CARD_CSV_HEADER: list[str] = ["Name", "Elixir", "Icon", "Ability Elixir"]
+HARDCODED_CHAMPS: dict[str, int] = {
+    "Little Prince": 3,
+    "Monk": 1,
+    "Boss Bandit": 1,
+    "Archer Queen": 1,
+    "Golden Knight": 1,
+    "Skeleton King": 2,
+    "Goblinstein": 2,
+    "Mighty Miner": 1
+}
 ICON_KEYS: list[str] = ["medium", "evolutionMedium"]
 
 def fetch_data(url: str, headers: Mapping[str, str]) -> dict[str, Any]:
@@ -40,8 +52,12 @@ def process_card_data(data: dict[str, Any]) -> list[list[Any]]:
             continue
             
         elixir: Any = card.get("elixirCost", "N/A")
+        rarity: str = card.get("rarity", "")
         icon_urls: dict[str, str] = card.get("iconUrls", {})
         safe_name: str = sanitize_name(name)
+        ability_elixir = "N/A"
+        if rarity.lower() == "champion":
+            ability_elixir = HARDCODED_CHAMPS.get(name, "N/A")
 
         for key in ICON_KEYS:
             icon_url = icon_urls.get(key)
@@ -57,7 +73,7 @@ def process_card_data(data: dict[str, Any]) -> list[list[Any]]:
                 
                 try:
                     download_image(icon_url, filepath)
-                    rows.append([display_name, elixir, filepath])
+                    rows.append([display_name, elixir, filepath, ability_elixir])
                 except requests.HTTPError as e:
                     print(f"Warning: Could not download image for {display_name} from {icon_url}. Error: {e}")
                 except Exception as e:
