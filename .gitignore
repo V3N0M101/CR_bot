@@ -6,8 +6,6 @@ __pycache__/
 API/
 Data/
 
-
-
 # C extensions
 *.so
 
