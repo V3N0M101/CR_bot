@@ -31,18 +31,16 @@ session = requests.Session()
 session.headers.update({"Authorization": f"Bearer {API_TOKEN}"})
 
 ### --- Clan Search --- ###
-search_name = "%20".join(Info.CLAN_NAME.split())
-CLAN_URL = f"{BASE_URL}/clans?name={search_name}&minScore={Info.MIN_SCORE}&limit={Info.LIMIT}"
-response = session.get(CLAN_URL)
-clan_data = response.json()
-clans = clan_data.get("items", [])
-
-# Filter clans to match exact case-sensitive name
-clans = [clan for clan in clans if clan.get("name") == Info.CLAN_NAME]
+def get_clans():
+    search_name = "%20".join(Info.CLAN_NAME.split())
+    CLAN_URL = f"{BASE_URL}/clans?name={search_name}&minScore={Info.MIN_SCORE}&limit={Info.LIMIT}"
+    response = session.get(CLAN_URL)
+    clan_data = response.json()
+    clans = clan_data.get("items", [])
+    return [clan for clan in clans if clan.get("name") == Info.CLAN_NAME]
 
 ### --- WAR FILTER --- ###
 def get_war_trophy_range(threshold):
-    """Get the appropriate war trophy range based on threshold."""
     if threshold >= 5000:
         return (5000, float('inf'))
     elif threshold >= 4000:
@@ -54,27 +52,16 @@ def get_war_trophy_range(threshold):
     elif threshold >= 1000:
         return (1000, 2000)
     else:
-        return (threshold, 1000)  # Use actual threshold value as minimum for 0-1000 range
+        return (threshold, 1000)
 
 def WAR_FILTER(clan):
-    """Filter clans based on war frequency and trophy range."""
-    
     clan_war_trophies = clan.get("clanWarTrophies", 0)
     min_range, max_range = get_war_trophy_range(Info.WAR_THRESHOLD)
-    
     return min_range <= clan_war_trophies < max_range
 
-def get_filtered_clans(clans, war_true):
-    """Filter clans based on war criteria."""
-    if war_true:
-        return [clan for clan in clans if WAR_FILTER(clan)]
-    return []
-
 def seasonal_clash(progress, current_month, current_year):
-    """Get seasonal trophy data, falling back to previous months if needed."""
     seasonal_trophies = 10000
     
-    # Try current month first, then fall back to previous months
     while seasonal_trophies == 10000 and current_month > 0:
         month_str = str(current_month).zfill(2)
         SEASONAL_URL = f"seasonal-trophy-road-{current_year}{month_str}"
@@ -97,9 +84,7 @@ def seasonal_clash(progress, current_month, current_year):
     return seasonal_trophies
 
 def check_member_fast(member_tag):
-    """Fast member check with minimal data fetching."""
     session = get_session()
-    
     PLAYER_URL = f"{BASE_URL}/players/{member_tag.replace('#', '%23')}"
     
     try:
@@ -148,28 +133,43 @@ def player_search_parallel(clan):
     
     return None, None, None, None
 
-def display_deck_info(battle_data):
-    """Display card and tower information for a battle."""
+def display_deck_info(battle_data, deck_counter=None):
     cards = battle_data.get('team')[0].get('cards')
+    
     for i, card in enumerate(cards):
         Max = card.get('maxLevel')
         Difference = 14 - Max
         Current_card_Level = card.get('level') + Difference
-        print(f"Card {i+1}: {card.get('name')} | Level {Current_card_Level}")
-    
-    tower = battle_data.get('team')[0].get('supportCards')[0].get('name')
-    Max = battle_data.get('team')[0].get('supportCards')[0].get('maxLevel')
-    Difference = 14 - Max
-    tower_level = battle_data.get('team')[0].get('supportCards')[0].get('level') + Difference
-    print(f"\nTower: {tower} | Level {tower_level}")
-
-def filtered(filtered_clans):
-    if filtered_clans:
-            min_range, max_range = get_war_trophy_range(Info.WAR_THRESHOLD)
-            if max_range == float('inf'):
-                print(f"Searching clans in war trophy range: {min_range}+")
+        card_number = (i % 8) + 1
+        
+        if Info.CLAN_WAR_TRUE and i % 8 == 0:
+            if deck_counter is not None:
+                deck_number = deck_counter[0] + (i // 8)
             else:
-                print(f"Searching clans in war trophy range: {min_range}-{max_range}")
+                deck_number = (i // 8) + 1
+            print(f"\n--- DECK{deck_number} ---\n")
+        
+        print(f"Card {card_number}: {card.get('name')} | Level {Current_card_Level}")
+    
+    if Info.CLAN_WAR_TRUE and deck_counter is not None:
+        num_decks = (len(cards) + 7) // 8
+        deck_counter[0] += num_decks
+    
+    if not Info.CLAN_WAR_TRUE:
+        tower_data = battle_data.get('team')[0].get('supportCards')[0]
+        tower = tower_data.get('name')
+        Max = tower_data.get('maxLevel')
+        Difference = 14 - Max
+        tower_level = tower_data.get('level') + Difference
+        print(f"\nTower: {tower} | Level {tower_level}")
+
+def print_clan_search_info(filtered_clans):
+    if filtered_clans:
+        min_range, max_range = get_war_trophy_range(Info.WAR_THRESHOLD)
+        if max_range == float('inf'):
+            print(f"Searching clans in war trophy range: {min_range}+")
+        else:
+            print(f"Searching clans in war trophy range: {min_range}-{max_range}")
 
 def player_search(filtered_clans):
     for clan in filtered_clans:
@@ -180,45 +180,70 @@ def player_search(filtered_clans):
             return tag
     print("Player Not Found")
     return None
-def main():
-    if Info.CLAN_WAR_TRUE:
-        filtered_clans = [clan for clan in clans if WAR_FILTER(clan)]
-        filtered(filtered_clans)
-    else:
-        filtered_clans = clans
-    tag = player_search(filtered_clans)
-    if tag != None: BATTLE_URL = f"{BASE_URL}/players/{tag.replace('#', '%23')}/battlelog"
-    try:
-        battles_data = session.get(BATTLE_URL).json()
-        print(f"\033[0;36m### --- PLAYER_DECK --- ###\033[0m")
-        for i,b in enumerate(battles_data):
-            if Info.CLAN_WAR_TRUE:
-                if b.get('type') == 'riverRaceDuelColosseum' or b.get('type') == '#riverRacePvP':
-                    print(b)
-                    continue
-            elif Info.POL_TRUE:
-                if b.get('type') == 'pathOfLegend':
-                    display_deck_info(b)
-                    return
-                else: continue
-            elif b.get('type') == 'pvp' or b.get('type') == 'trail':
-                display_deck_info(b)
+
+def process_clan_war_battles(battles_data):
+    print(f"\033[0;36m### --- CLAN_WAR_DECKS --- ###\033[0m")
+    
+    war_battles = [b for b in battles_data if b.get('type') in ['riverRaceDuelColosseum', 'riverRacePvP']]
+    
+    if not war_battles:
+        print(f"\n\033[0;31mNo clan war battles found\033[0m\n")
+        print(f"Last battle type: {battles_data[0].get('type')}\n")
+        display_deck_info(battles_data[0])
+        return
+    
+    deck_counter = [1]
+    for battle in war_battles:
+        display_deck_info(battle, deck_counter)
+
+def process_regular_battles(battles_data):
+    print(f"\033[0;36m### --- PLAYER_DECK --- ###\033[0m")
+    
+    for i, battle in enumerate(battles_data):
+        battle_type = battle.get('type')
+        
+        if Info.POL_TRUE:
+            if battle_type == 'pathOfLegend':
+                display_deck_info(battle)
                 return
-            elif i == len(battles_data) - 1:
-                print(f"\n\033[0;31mThe specific battle type was not found\033[0m\n")
-                print(f"Last battle type: {b.get('type')}\n")
-                display_deck_info(b)
+        elif battle_type in ['pvp', 'trail']:
+            display_deck_info(battle)
+            return
+        
+        if i == len(battles_data) - 1:
+            print(f"\n\033[0;31mThe specific battle type was not found\033[0m\n")
+            print(f"Last battle type: {battle_type}\n")
+            display_deck_info(battle)
+
+def get_battle_data(player_tag):
+    BATTLE_URL = f"{BASE_URL}/players/{player_tag.replace('#', '%23')}/battlelog"
+    try:
+        return session.get(BATTLE_URL).json()
     except Exception as e:
         print(f"Error fetching battles: {e}")
-    
+        return None
 
+def main():
+    clans = get_clans()
+    
+    if Info.CLAN_WAR_TRUE:
+        filtered_clans = [clan for clan in clans if WAR_FILTER(clan)]
+        print_clan_search_info(filtered_clans)
+    else:
+        filtered_clans = clans
+    
+    player_tag = player_search(filtered_clans)
+    if player_tag is None:
+        return
+    
+    battles_data = get_battle_data(player_tag)
+    if battles_data is None:
+        return
+
+    if Info.CLAN_WAR_TRUE:
+        process_clan_war_battles(battles_data)
+    else:
+        process_regular_battles(battles_data)
 
 if __name__ == "__main__":
     main()
-
-#PvP (ladder)
-#pathOfLegend (PoL)
-
-### --- war filter --- ###
-#riverRaceDuelColosseum
-#riverRacePvP
