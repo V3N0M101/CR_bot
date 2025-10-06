@@ -5,13 +5,16 @@ Date: 2025-10-02
 '''
 
 ### --- OBTAINED AUTOMATICALLY --- ###
-PLAYER_NAME = "CODE Jynxzi"
-CLAN_NAME = "Jynxzi Verse"
-TROPHY = 10000
-POL_TROPHY = 2370
+PLAYER_NAME = "gavin"
+CLAN_NAME = "Suspicious Fish"
+TROPHY = 15000
+POL_TROPHY = 0
 
 ### --- OBTAINED PER USER INPUT --- ###
 MIN_SCORE = 5000
-LIMIT = 50
+LIMIT = 100
+WAR_THRESHOLD = 1455
+
+# True/False Settings
 CLAN_WAR_TRUE = False
-WAR_THRESHOLD = 5000
+POL_TRUE = False
