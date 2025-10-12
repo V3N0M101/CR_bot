@@ -86,7 +86,6 @@ def seasonal_clash(progress, current_month, current_year):
 def check_member_fast(member_tag):
     session = get_session()
     PLAYER_URL = f"{BASE_URL}/players/{member_tag.replace('#', '%23')}"
-    
     try:
         player_data = session.get(PLAYER_URL, timeout=3).json()
         
@@ -96,6 +95,7 @@ def check_member_fast(member_tag):
         
         trophies = player_data.get('trophies', 0)
         player_pol = player_data.get('currentPathOfLegendSeasonResult', {}).get('trophies', 0)
+        player_league = player_data.get('currentPathOfLegendSeasonResult', {}).get('leagueNumber', 0)
         
         if trophies == 10000:
             progress = player_data.get('progress', {})
@@ -104,9 +104,16 @@ def check_member_fast(member_tag):
         else:
             player_trophies = trophies
         
-        if player_trophies == Info.TROPHY or player_pol == Info.POL_TROPHY:
-            return (name, member_tag, player_trophies, player_pol)
-        
+        if Info.POL_TRUE and Info.UC_TRUE: # UC
+            if player_pol == Info.POL_TROPHY:
+                return (name, member_tag, player_trophies, player_pol)
+        elif Info.POL_TRUE and not Info.UC_TRUE: # PoL
+            if player_league == Info.LEAGUE:
+                return (name, member_tag, player_trophies, player_pol)
+        else: # Trophy Road
+            if player_trophies == Info.TROPHY:
+                return (name, member_tag, player_trophies, player_pol)
+            
         return None
     except:
         return None
